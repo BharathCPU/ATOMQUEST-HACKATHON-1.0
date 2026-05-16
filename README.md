@@ -1,4 +1,4 @@
-                                                                  ATOMQUEST HACKATHON 1.0
+                                                          ATOMQUEST HACKATHON 1.0
 Problem Statement
 In-House Goal Setting & Tracking Portal
 1.  Background & Problem Context
