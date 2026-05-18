@@ -36,38 +36,69 @@ function renderTeamGoals() {
   const user = App.currentUser;
   const teamMembers = DataStore.getUsersByManager(user.id);
   
+  // Separate submitted goals from other statuses
+  const submittedByMember = {};
+  const otherByMember = {};
+  
+  teamMembers.forEach(m => {
+    const allGoals = DataStore.getGoalsByEmployee(m.id);
+    submittedByMember[m.id] = allGoals.filter(g => g.status === 'submitted');
+    otherByMember[m.id] = allGoals.filter(g => g.status !== 'submitted');
+  });
+  
   document.getElementById('content').innerHTML = `
     <div class="section-header"><h3>Team Goals — Review & Approve</h3>
       <button class="btn btn-primary btn-sm" onclick="openSharedGoalForm()">${icon('share-2', 14)} Push Shared Goal</button>
     </div>
+    <div style="margin-bottom:24px">
+      <div class="flex gap-8 flex-wrap">
+        ${teamMembers.some(m => submittedByMember[m.id].length > 0) ? `<span class="badge badge-submitted" style="background:rgba(245,158,11,0.15);color:var(--warning)">${icon('alert-circle', 12)} ${teamMembers.reduce((sum, m) => sum + submittedByMember[m.id].length, 0)} pending approval</span>` : '<span class="badge" style="background:rgba(16,185,129,0.15);color:var(--success)">✓ No pending approvals</span>'}
+      </div>
+    </div>
     ${teamMembers.map(m => {
-      const goals = DataStore.getGoalsByEmployee(m.id);
-      if (!goals.length) return '';
-      const totalW = goals.reduce((s, g) => s + g.weightage, 0);
+      const submittedGoals = submittedByMember[m.id];
+      const otherGoals = otherByMember[m.id];
+      
+      // Only show card if there are submitted goals for this employee
+      if (!submittedGoals.length && !otherGoals.length) return '';
+      
       return `
         <div class="card mb-16">
           <div class="flex-between mb-16">
-            <div class="flex gap-12"><div class="avatar">${getInitials(m.name)}</div><div><div class="fw-600">${m.name}</div><div class="fs-sm text-muted">${m.department} · Weightage: ${totalW}%</div></div></div>
+            <div class="flex gap-12"><div class="avatar">${getInitials(m.name)}</div><div><div class="fw-600">${m.name}</div><div class="fs-sm text-muted">${m.department}</div></div></div>
             <div class="flex gap-8">
-              ${goals.some(g => g.status === 'submitted') ? `<button class="btn btn-success btn-sm" onclick="approveAllGoals('${m.id}')">${icon('check', 14)} Approve All</button>` : ''}
+              ${submittedGoals.length > 0 ? `<button class="btn btn-success btn-sm" onclick="approveAllGoals('${m.id}')">${icon('check', 14)} Approve All (${submittedGoals.length})</button>` : ''}
             </div>
           </div>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Goal</th><th>Thrust Area</th><th>UoM</th><th>Target</th><th>Weight</th><th>Status</th><th>Actions</th></tr></thead>
-            <tbody>${goals.map(g => `<tr>
-              <td><div class="fw-600">${g.title}</div><div class="fs-sm text-muted">${g.description?.slice(0, 60) || ''}${g.description?.length > 60 ? '...' : ''}</div></td>
-              <td><span class="badge badge-draft">${g.thrustArea}</span></td>
-              <td>${getUOMLabel(g.uom)}</td>
-              <td>${g.status === 'submitted' ? `<input class="inline-edit" style="width:80px" value="${g.uom === 'timeline' ? g.target : g.target}" onchange="inlineEditGoal('${g.id}','target',this.value)">` : (g.uom === 'timeline' ? formatDate(g.target) : g.target)}</td>
-              <td>${g.status === 'submitted' ? `<input class="inline-edit" type="number" style="width:60px" value="${g.weightage}" min="10" max="100" step="5" onchange="inlineEditGoal('${g.id}','weightage',this.value)">` : g.weightage + '%'}</td>
-              <td>${getStatusBadge(g.status)}</td>
-              <td><div class="flex gap-8">
-                ${g.status === 'submitted' ? `<button class="btn btn-success btn-sm" onclick="approveGoal('${g.id}')" title="Approve">${icon('check', 14)}</button><button class="btn btn-danger btn-sm" onclick="returnGoalForm('${g.id}')" title="Return">${icon('undo', 14)}</button>` : ''}
-              </div></td>
-            </tr>`).join('')}</tbody>
-          </table></div>
+          
+          ${submittedGoals.length > 0 ? `
+            <div style="margin-bottom:16px">
+              <div class="fs-sm fw-600 text-warning" style="margin-bottom:8px">${icon('alert-circle', 14)} Pending Approval (${submittedGoals.length})</div>
+              <div class="table-wrap"><table>
+                <thead><tr><th>Goal</th><th>Thrust Area</th><th>UoM</th><th>Target</th><th>Weight</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody>${submittedGoals.map(g => `<tr>
+                  <td><div class="fw-600">${g.title}</div><div class="fs-sm text-muted">${g.description?.slice(0, 60) || ''}${g.description?.length > 60 ? '...' : ''}</div></td>
+                  <td><span class="badge badge-draft">${g.thrustArea}</span></td>
+                  <td>${getUOMLabel(g.uom)}</td>
+                  <td><input class="inline-edit" style="width:80px" value="${g.uom === 'timeline' ? g.target : g.target}" onchange="inlineEditGoal('${g.id}','target',this.value)"></td>
+                  <td><input class="inline-edit" type="number" style="width:60px" value="${g.weightage}" min="10" max="100" step="5" onchange="inlineEditGoal('${g.id}','weightage',this.value)"></td>
+                  <td>${getStatusBadge(g.status)}</td>
+                  <td><div class="flex gap-8">
+                    <button class="btn btn-success btn-sm" onclick="approveGoal('${g.id}')" title="Approve">${icon('check', 14)}</button><button class="btn btn-danger btn-sm" onclick="returnGoalForm('${g.id}')" title="Return">${icon('undo', 14)}</button>
+                  </div></td>
+                </tr>`).join('')}</tbody>
+              </table></div>
+            </div>
+          ` : ''}
+          
+          ${otherGoals.length > 0 ? `
+            <div style="padding:12px;background:rgba(99,102,241,0.05);border-radius:8px;border-left:3px solid var(--accent)">
+              <div class="fs-sm fw-600" style="color:var(--accent);margin-bottom:8px">${icon('info', 14)} Other Goals (${otherGoals.filter(g => g.status === 'approved' || g.status === 'locked').length} approved, ${otherGoals.filter(g => g.status === 'draft' || g.status === 'returned').length} draft)</div>
+              <div class="fs-sm text-muted">Draft goals must be submitted by the employee first. Approved goals are locked for tracking.</div>
+            </div>
+          ` : ''}
         </div>`;
-    }).join('') || '<div class="empty-state"><h3>No team goals</h3></div>'}
+    }).join('') || '<div class="empty-state"><h3>No team goals</h3><p class="text-muted">Employees will submit their goals here for approval</p></div>'}
   `;
   refreshIcons();
 }
@@ -96,9 +127,10 @@ function inlineEditGoal(goalId, field, value) {
 function approveGoal(goalId) {
   const goal = DataStore.getGoal(goalId);
   goal.status = 'approved';
+  goal.returnComment = null;  // Clear return comments on approval
   DataStore.saveGoal(goal);
   DataStore.addAuditLog({ entityType: 'goal', entityId: goalId, action: 'approved', changedBy: App.currentUser.id, field: 'status', oldValue: 'submitted', newValue: 'approved', reason: 'Manager approved' });
-  showToast('Goal approved', 'success');
+  showToast('Goal approved ✓', 'success');
   renderTeamGoals();
 }
 

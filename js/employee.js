@@ -28,11 +28,12 @@ function renderGoalCard(goal, showActions = true) {
   const score = calcProgressScore(goal, getActiveQuarter());
   const isShared = goal.sharedFromGoalId;
   const canEdit = goal.status === 'draft' || goal.status === 'returned';
+  const canDelete = goal.status === 'draft' || goal.status === 'returned';
   return `
     <div class="card goal-card">
       <div class="flex-between mb-8">
         <div class="flex gap-8">${getStatusBadge(goal.status)}${isShared ? '<span class="badge badge-shared">Shared</span>' : ''}</div>
-        <div class="goal-weight">${goal.weightage}%</div>
+        <div class="goal-weight" onclick="editGoalWeight('${goal.id}', ${goal.weightage})" style="cursor:pointer;padding:4px 8px;border-radius:4px;background:rgba(99,102,241,0.1)" title="Click to edit weightage">${goal.weightage}%</div>
       </div>
       <h4 style="margin-bottom:4px">${goal.title}</h4>
       <p class="fs-sm text-muted" style="margin-bottom:8px">${goal.description || ''}</p>
@@ -43,7 +44,7 @@ function renderGoalCard(goal, showActions = true) {
       </div>
       ${score !== null ? `<div class="mt-8"><div class="flex-between fs-sm mb-8"><span class="text-muted">Progress</span><span class="${getScoreColor(score)}">${Math.round(score)}%</span></div><div class="progress-bar"><div class="progress-fill ${getProgressBarColor(score)}" style="width:${Math.min(score, 100)}%"></div></div></div>` : ''}
       ${goal.returnComment ? `<div class="mt-8" style="padding:8px 12px;background:rgba(245,158,11,0.08);border-radius:8px;border-left:3px solid var(--warning)"><div class="fs-sm text-warning fw-600">Returned for rework:</div><div class="fs-sm text-muted">${goal.returnComment}</div></div>` : ''}
-      ${showActions && App.currentUser.role === 'employee' ? `<div class="goal-actions">${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="openGoalForm('${goal.id}')">${icon('edit-2', 14)} Edit</button><button class="btn btn-danger btn-sm" onclick="deleteGoalConfirm('${goal.id}')">${icon('trash-2', 14)} Delete</button>` : ''}${goal.status === 'draft' || goal.status === 'returned' ? '' : ''}</div>` : ''}
+      ${showActions && App.currentUser.role === 'employee' ? `<div class="goal-actions" style="display:flex;gap:8px;margin-top:12px">${canEdit ? `<button class="btn btn-secondary btn-sm" onclick="openGoalForm('${goal.id}')" style="flex:1">${icon('edit-2', 14)} Edit</button>` : ''}${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteGoalConfirm('${goal.id}')" style="flex:1">${icon('trash-2', 14)} Delete</button>` : ''}</div>` : ''}
     </div>`;
 }
 
@@ -52,26 +53,34 @@ function renderMyGoals() {
   const goals = DataStore.getGoalsByEmployee(user.id);
   const totalWeight = goals.reduce((s, g) => s + g.weightage, 0);
   const errors = goals.length > 0 ? validateGoals(goals) : [];
-  const canSubmit = goals.length > 0 && errors.length === 0 && goals.some(g => g.status === 'draft' || g.status === 'returned');
+  const drafts = goals.filter(g => g.status === 'draft' || g.status === 'returned');
+  const submitted = goals.filter(g => g.status === 'submitted');
+  const approved = goals.filter(g => g.status === 'approved' || g.status === 'locked');
+  const canSubmit = goals.length > 0 && errors.length === 0 && drafts.length > 0;
 
   document.getElementById('content').innerHTML = `
     <div class="section-header"><h3>My Goal Sheet</h3>
       <div class="flex gap-8">
-        ${canSubmit ? `<button class="btn btn-success btn-sm" onclick="submitGoals()">${icon('send', 14)} Submit for Approval</button>` : ''}
-        <button class="btn btn-primary btn-sm" onclick="openGoalForm()">${icon('plus', 16)} Add Goal</button>
+        ${canSubmit ? `<button class=\"btn btn-success btn-sm\" onclick=\"submitGoals()\" style=\"animation:pulse 2s infinite;font-size:1rem;padding:10px 16px\">${icon('send', 14)} SUBMIT ${drafts.length} GOAL(S) FOR APPROVAL</button>` : ''}
+        ${submitted.length > 0 && !canSubmit ? `<button class=\"btn btn-secondary btn-sm\" disabled style=\"opacity:0.6\">${icon('check', 14)} ${submitted.length} Submitted - Awaiting Manager</button>` : ''}
+        <button class=\"btn btn-primary btn-sm\" onclick=\"openGoalForm()\">${icon('plus', 16)} Add Goal</button>
       </div>
     </div>
+    ${canSubmit ? `<div class=\"card mb-16\" style=\"border-left:4px solid var(--success);background:linear-gradient(135deg, rgba(16,185,129,0.15), rgba(16,185,129,0.05));padding:16px;border-radius:8px\"><div class=\"flex gap-12\"><div style=\"flex-shrink:0\"><div style=\"font-size:2rem\">✓</div></div><div><div class=\"fw-600\" style=\"color:var(--success);font-size:1.1rem\">Ready to Submit!</div><div class=\"fs-sm text-muted mt-8\">All validations passed. Your ${drafts.length} goal(s) with 100% weightage are ready for manager review.</div></div></div></div>` : ''}
+    ${errors.length ? `<div class=\"card mb-16\" style=\"border-left:4px solid var(--danger);background:rgba(239,68,68,0.1);padding:16px\"><div class=\"fw-600\" style=\"color:var(--danger);margin-bottom:12px;font-size:1rem\">${icon('alert-circle', 18)} Cannot Submit Yet - Fix These Issues:</div><div>${errors.map(e => `<div class=\"fs-sm text-muted\" style=\"margin:6px 0\">• ${e}</div>`).join('')}</div></div>` : ''}
+    ${submitted.length > 0 ? `<div class=\"card mb-16\" style=\"border-left:4px solid var(--accent);background:rgba(99,102,241,0.08)\"><div class=\"fw-600\" style=\"color:var(--accent)\">${icon('clock', 16)} ${submitted.length} Goal(s) Waiting for Manager Approval</div><div class=\"fs-sm text-muted mt-8\">Your manager will review and approve these shortly. Once approved, you can start tracking achievements.</div></div>` : ''}
     <div class="weightage-gauge">
       <span class="gauge-label">${icon('pie-chart', 16)} Total Weightage</span>
       <div class="gauge-bar"><div class="progress-bar" style="height:10px"><div class="progress-fill ${totalWeight === 100 ? 'green' : totalWeight > 100 ? 'red' : 'yellow'}" style="width:${Math.min(totalWeight, 100)}%"></div></div></div>
       <span class="gauge-value ${totalWeight === 100 ? 'gauge-valid' : 'gauge-invalid'}">${totalWeight}%</span>
     </div>
     <div class="flex gap-8 mb-16 flex-wrap">
-      <span class="badge ${goals.length <= 8 ? 'badge-approved' : 'badge-returned'}">${icon('list', 12)} ${goals.length}/8 Goals</span>
-      <span class="badge ${totalWeight === 100 ? 'badge-approved' : 'badge-returned'}">${icon('percent', 12)} Weightage ${totalWeight === 100 ? '✓' : '✕'}</span>
+      <span class=\"badge ${goals.length <= 8 ? 'badge-approved' : 'badge-returned'}\">${icon('list', 12)} ${goals.length}/8 Goals (${drafts.length} draft, ${submitted.length} submitted, ${approved.length} approved)</span>
+      <span class=\"badge ${totalWeight === 100 ? 'badge-approved' : 'badge-returned'}\">${icon('percent', 12)} Weightage ${totalWeight === 100 ? '✓' : '✕'} ${totalWeight}%</span>
       <span class="badge ${goals.every(g => g.weightage >= 10) ? 'badge-approved' : 'badge-returned'}">${icon('shield', 12)} Min 10% each ${goals.every(g => g.weightage >= 10) ? '✓' : '✕'}</span>
     </div>
     ${errors.length ? `<div class="card mb-16" style="border-color:rgba(239,68,68,0.3)"><div class="fs-sm text-danger fw-600 mb-8">⚠ Validation Issues:</div>${errors.map(e => `<div class="fs-sm text-muted">• ${e}</div>`).join('')}</div>` : ''}
+    ${drafts.length > 0 && !errors.length ? `<div class="card mb-16" style="border-left:4px solid var(--accent);background:rgba(99,102,241,0.05)"><div class="fw-600" style="color:var(--accent)">${icon('info', 16)} Ready to submit?</div><div class="fs-sm text-muted mt-8">Your ${drafts.length} draft goal(s) are ready. Click "Submit for Approval" when you're done editing.</div></div>` : ''}
     <div class="grid grid-2">${goals.length ? goals.map(g => renderGoalCard(g)).join('') : '<div class="empty-state" style="grid-column:1/-1"><h3>No goals created yet</h3><p class="text-muted">Start by adding your first goal</p></div>'}</div>
     ${goals.length < 8 ? `<button class="fab" onclick="openGoalForm()" title="Add Goal">+</button>` : ''}
   `;
@@ -126,21 +135,55 @@ function saveGoalForm(goalId) {
   if (uom === 'zero') target = '0';
   if (!target && uom !== 'zero') return showToast('Please set a target', 'error');
 
+  // Check if this is a new goal (goalId is empty or falsy)
+  const isNewGoal = !goalId || goalId.trim() === '';
   const goals = DataStore.getGoalsByEmployee(App.currentUser.id);
-  if (!goalId && goals.length >= 8) return showToast('Maximum 8 goals allowed', 'error');
+  if (isNewGoal && goals.length >= 8) return showToast('Maximum 8 goals allowed', 'error');
+
+  let existingGoal = null;
+  if (!isNewGoal) {
+    existingGoal = DataStore.getGoal(goalId);
+    if (!existingGoal) return showToast('Goal not found', 'error');
+  }
 
   const goalData = {
-    id: goalId || generateId(), employeeId: App.currentUser.id,
-    thrustArea: thrust, title, description: desc, uom, target: target.toString(), weightage,
-    status: goalId ? DataStore.getGoal(goalId).status : 'draft',
-    achievements: goalId ? DataStore.getGoal(goalId).achievements : { q1: { actual: '', status: 'not_started' }, q2: { actual: '', status: 'not_started' }, q3: { actual: '', status: 'not_started' }, q4: { actual: '', status: 'not_started' } },
-    sharedFromGoalId: goalId ? DataStore.getGoal(goalId).sharedFromGoalId : null
+    id: isNewGoal ? generateId() : goalId, 
+    employeeId: App.currentUser.id,
+    thrustArea: thrust, 
+    title, 
+    description: desc, 
+    uom, 
+    target: target.toString(), 
+    weightage,
+    status: isNewGoal ? 'draft' : existingGoal.status,
+    achievements: isNewGoal ? { q1: { actual: '', status: 'not_started' }, q2: { actual: '', status: 'not_started' }, q3: { actual: '', status: 'not_started' }, q4: { actual: '', status: 'not_started' } } : existingGoal.achievements,
+    sharedFromGoalId: isNewGoal ? null : existingGoal.sharedFromGoalId,
+    returnComment: isNewGoal ? null : existingGoal.returnComment
   };
-  if (goalData.status === 'returned') goalData.status = 'draft';
+  
+  // When editing a returned goal, convert it back to draft
+  if (goalData.status === 'returned') {
+    goalData.status = 'draft';
+    goalData.returnComment = null;
+  }
 
   DataStore.saveGoal(goalData);
   closeModal();
-  showToast(goalId ? 'Goal updated' : 'Goal created', 'success');
+  showToast(isNewGoal ? 'Goal created. Add more goals to reach 100% weightage.' : 'Goal updated', 'success');
+  App.navigate(App.currentPage);
+}
+
+// Helper to quickly edit weightage
+function editGoalWeight(goalId, currentWeight) {
+  const newWeight = prompt(`Edit weightage for this goal (current: ${currentWeight}%):`, currentWeight.toString());
+  if (newWeight === null) return;
+  const w = Number(newWeight);
+  if (isNaN(w) || w < 10 || w > 100) return showToast('Weightage must be between 10-100%', 'error');
+  
+  const goal = DataStore.getGoal(goalId);
+  goal.weightage = w;
+  DataStore.saveGoal(goal);
+  showToast('Weightage updated', 'success');
   App.navigate(App.currentPage);
 }
 
